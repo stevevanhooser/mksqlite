@@ -167,10 +167,7 @@ switch arch
     % the CI workflow), which both clang and the mex link honour.
     % Objects are written straight into ./obj so the shared link step
     % below (which globs ./obj/*.o*) picks them up.
-    % -headerpad_max_install_names reserves Mach-O header space so
-    % tools/normalize_maca64_rpaths.sh can rewrite the rpaths in place
-    % afterwards without "larger updated load commands do not fit".
-    compvars = ' LDFLAGS="\$LDFLAGS -Wl,-headerpad_max_install_names" ';
+    compvars = '';
     buildargs = strrep( buildargs, '-DNDEBUG#1', '-DNDEBUG=1' );
     for srcFile = strsplit( strtrim(modules) )
         [~, objName] = fileparts( srcFile{1} );
@@ -239,13 +236,29 @@ end
 if ~strcmp( arch, 'maca64' )
     eval (['mex -c -outdir ./obj ', compvars, buildargs, modules]);
 end
-obj = dir( './obj/*.o*' );
-% obj = fullfile( './obj/', {obj.name} );  % Only available in newer MATLAB versions
-obj = cellfun( @(c) fullfile( './obj/', c ), {obj.name}, 'UniformOutput', 0 );
-obj = obj(:)';
-obj(2,:) = deal( {' '} );
+objList = dir( './obj/*.o*' );
+% objList = fullfile( './obj/', {objList.name} );  % Only available in newer MATLAB versions
+objPaths = cellfun( @(c) fullfile( './obj/', c ), {objList.name}, 'UniformOutput', 0 );
+objPaths = objPaths(:)';
+
 % compile C++ source and link
-eval (['mex -output mksqlite ', compvars, buildargs, ' mksqlite.cpp ', obj{:}]);
+if strcmp( arch, 'maca64' )
+    % Link via the functional form of mex (real string arguments) rather
+    % than eval'ing a command-syntax string: it sidesteps MATLAB's
+    % command-syntax quoting, which cannot carry an LDFLAGS="..." token.
+    % -headerpad_max_install_names reserves Mach-O header space so that
+    % tools/normalize_maca64_rpaths.sh can rewrite the rpaths in place
+    % afterwards without "larger updated load commands do not fit".
+    linkArgs = [ { '-output', 'mksqlite', ...
+                   'LDFLAGS=$LDFLAGS -Wl,-headerpad_max_install_names' }, ...
+                 strsplit( strtrim( buildargs ) ), ...
+                 { 'mksqlite.cpp' }, objPaths ];
+    mex( linkArgs{:} );
+else
+    obj = objPaths;
+    obj(2,:) = deal( {' '} );
+    eval (['mex -output mksqlite ', compvars, buildargs, ' mksqlite.cpp ', obj{:}]);
+end
 
 % back to the start directory
 cd (mksqlite_compile_currdir);
