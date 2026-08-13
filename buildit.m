@@ -167,7 +167,10 @@ switch arch
     % the CI workflow), which both clang and the mex link honour.
     % Objects are written straight into ./obj so the shared link step
     % below (which globs ./obj/*.o*) picks them up.
-    compvars = '';
+    % -headerpad_max_install_names reserves Mach-O header space so
+    % tools/normalize_maca64_rpaths.sh can rewrite the rpaths in place
+    % afterwards without "larger updated load commands do not fit".
+    compvars = ' LDFLAGS="\$LDFLAGS -Wl,-headerpad_max_install_names" ';
     buildargs = strrep( buildargs, '-DNDEBUG#1', '-DNDEBUG=1' );
     for srcFile = strsplit( strtrim(modules) )
         [~, objName] = fileparts( srcFile{1} );
