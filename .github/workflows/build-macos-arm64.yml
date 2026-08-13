@@ -3,6 +3,8 @@ on:
   workflow_dispatch: {}
   push:
     branches: [ macos-arm64-ci, claude/macos-arm64-matlab-mex-cw4ihg ]
+permissions:
+  contents: write   # commit-binary pushes the rebuilt mexmaca64 back to the branch
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -24,7 +26,7 @@ jobs:
       - name: Normalize rpaths
         run: bash tools/normalize_maca64_rpaths.sh mksqlite.mexmaca64
       - name: Show load commands
-        run: otool -l mksqlite.mexmaca64 | grep -A2 -E 'LC_RPATH|LC_BUILD_VERSION'; otool -L mksqlite.mexmaca64
+        run: otool -l mksqlite.mexmaca64 | grep -A3 -E 'LC_RPATH|LC_BUILD_VERSION'; otool -L mksqlite.mexmaca64
       - name: Load + smoke test (core, MD5, blosc, regex)
         uses: matlab-actions/run-command@v2
         with:
@@ -33,3 +35,32 @@ jobs:
         with:
           name: mksqlite-maca64-${{ matrix.os }}-${{ matrix.matlab }}
           path: mksqlite.mexmaca64
+
+  # Commit the rebuilt, portable mexmaca64 back to the branch. Runs only on
+  # pushes (not manual dispatch), once the whole matrix is green. The min-OS
+  # is stamped 11.0 regardless of cell, so we standardise on the oldest
+  # runner/MATLAB combination for maximum backward compatibility.
+  commit-binary:
+    needs: build
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          submodules: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: mksqlite-maca64-macos-14-R2023b
+          path: .
+      - name: Commit updated binary if it changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- mksqlite.mexmaca64; then
+            echo "mksqlite.mexmaca64 unchanged; nothing to commit."
+            exit 0
+          fi
+          git add mksqlite.mexmaca64
+          git commit -m "CI: rebuild portable mksqlite.mexmaca64 (arm64) [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
