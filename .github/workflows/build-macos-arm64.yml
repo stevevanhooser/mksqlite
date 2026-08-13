@@ -25,15 +25,10 @@ jobs:
         run: bash tools/normalize_maca64_rpaths.sh mksqlite.mexmaca64
       - name: Show load commands
         run: otool -l mksqlite.mexmaca64 | grep -A2 -E 'LC_RPATH|LC_BUILD_VERSION'; otool -L mksqlite.mexmaca64
-      - name: Load + round-trip test
+      - name: Load + smoke test (core, MD5, blosc, regex)
         uses: matlab-actions/run-command@v2
         with:
-          command: |
-            disp(mksqlite('version mex'));
-            mksqlite('open', ':memory:');
-            mksqlite('CREATE TABLE t (a)'); mksqlite('INSERT INTO t VALUES (42)');
-            r = mksqlite('SELECT a FROM t'); assert(r(1).a == 42); mksqlite('close');
-            disp('mksqlite load + round-trip OK');
+          command: "addpath('test'); mksqlite_ci_smoke"
       - uses: actions/upload-artifact@v4
         with:
           name: mksqlite-maca64-${{ matrix.os }}-${{ matrix.matlab }}

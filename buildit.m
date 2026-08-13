@@ -165,16 +165,20 @@ switch arch
     % Mirrors the maci64 branch above, but targets -arch arm64. The
     % min-OS floor is taken from MACOSX_DEPLOYMENT_TARGET (set to 11.0 by
     % the CI workflow), which both clang and the mex link honour.
+    % Objects are written straight into ./obj so the shared link step
+    % below (which globs ./obj/*.o*) picks them up.
     compvars = '';
     buildargs = strrep( buildargs, '-DNDEBUG#1', '-DNDEBUG=1' );
     for srcFile = strsplit( strtrim(modules) )
-        clangStr = ['clang -o ', strrep( srcFile{1}, '.c', '.o' ),  ...
+        [~, objName] = fileparts( srcFile{1} );
+        objFile = fullfile( outdir, [objName, '.o'] );
+        clangStr = ['clang -o ', objFile,  ...
                     ' -c -arch arm64 ', strrep( buildargs, ' -ldl ', ' ' ),' ', srcFile{1}];
         disp( clangStr )
         [status,result] = system( clangStr, '-echo' );
         assert( status == 0 );
     end
-    modules = strrep( modules, '.c', '.o' );
+    modules = '';  % C-modules are already compiled into ./obj
 end
 
 
@@ -227,7 +231,11 @@ else
 end
 
 % compile C sources
-eval (['mex -c -outdir ./obj ', compvars, buildargs, modules]);
+% (on arm64 the C-modules are precompiled with clang straight into ./obj,
+%  so there is nothing left for mex to compile here)
+if ~strcmp( arch, 'maca64' )
+    eval (['mex -c -outdir ./obj ', compvars, buildargs, modules]);
+end
 obj = dir( './obj/*.o*' );
 % obj = fullfile( './obj/', {obj.name} );  % Only available in newer MATLAB versions
 obj = cellfun( @(c) fullfile( './obj/', c ), {obj.name}, 'UniformOutput', 0 );
