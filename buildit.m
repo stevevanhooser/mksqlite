@@ -10,7 +10,14 @@
 function buildit(varargin)
 clc
 
-error( 'buildit is deprecated, use CMake toolchain instead! ' ) % comment out this line if you really want to use it
+% buildit is deprecated in favour of the CMake toolchain, but it is still
+% used to (re)build the Apple Silicon (arm64/maca64) MEX in CI, where CMake
+% has never been wired up for that target. Allow it to run on maca64 so the
+% GitHub Actions macOS-arm64 workflow can build a portable mksqlite.mexmaca64;
+% keep the deprecation guard for every other architecture.
+if ~strcmp( computer('arch'), 'maca64' )
+    error( 'buildit is deprecated, use CMake toolchain instead! ' ) % comment out this line if you really want to use it
+end
 
 switch nargin
 
@@ -153,6 +160,21 @@ switch arch
         end
         modules = strrep( modules, '.c', '.o' );
     end
+  case {'maca64'}
+    % Precompile C-modules for mex on Apple Silicon (arm64).
+    % Mirrors the maci64 branch above, but targets -arch arm64. The
+    % min-OS floor is taken from MACOSX_DEPLOYMENT_TARGET (set to 11.0 by
+    % the CI workflow), which both clang and the mex link honour.
+    compvars = '';
+    buildargs = strrep( buildargs, '-DNDEBUG#1', '-DNDEBUG=1' );
+    for srcFile = strsplit( strtrim(modules) )
+        clangStr = ['clang -o ', strrep( srcFile{1}, '.c', '.o' ),  ...
+                    ' -c -arch arm64 ', strrep( buildargs, ' -ldl ', ' ' ),' ', srcFile{1}];
+        disp( clangStr )
+        [status,result] = system( clangStr, '-echo' );
+        assert( status == 0 );
+    end
+    modules = strrep( modules, '.c', '.o' );
 end
 
 

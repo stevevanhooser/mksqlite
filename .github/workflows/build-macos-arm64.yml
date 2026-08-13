@@ -1,0 +1,40 @@
+name: Build & test mksqlite (macOS arm64)
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ macos-arm64-ci, claude/macos-arm64-matlab-mex-cw4ihg ]
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]          # hosted arm64 images (oldest available is macos-14)
+        matlab: [R2023b, R2024b, latest]  # MATLAB-version matrix
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"     # arm64 back-compat floor = macOS 11 (Big Sur)
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: matlab-actions/setup-matlab@v2
+        with: { release: "${{ matrix.matlab }}" }
+      - name: Build (arm64)
+        uses: matlab-actions/run-command@v2
+        with: { command: "buildit" }
+      - name: Normalize rpaths
+        run: bash tools/normalize_maca64_rpaths.sh mksqlite.mexmaca64
+      - name: Show load commands
+        run: otool -l mksqlite.mexmaca64 | grep -A2 -E 'LC_RPATH|LC_BUILD_VERSION'; otool -L mksqlite.mexmaca64
+      - name: Load + round-trip test
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            disp(mksqlite('version mex'));
+            mksqlite('open', ':memory:');
+            mksqlite('CREATE TABLE t (a)'); mksqlite('INSERT INTO t VALUES (42)');
+            r = mksqlite('SELECT a FROM t'); assert(r(1).a == 42); mksqlite('close');
+            disp('mksqlite load + round-trip OK');
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mksqlite-maca64-${{ matrix.os }}-${{ matrix.matlab }}
+          path: mksqlite.mexmaca64
